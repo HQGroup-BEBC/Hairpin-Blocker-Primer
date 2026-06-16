@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# oxDNA trajectory files (large binary, can be regenerated)
+sim_out/traj_*.dat
+sim_out/traj_hist_*.dat
+sim_out/energy_*.dat
+sim_out/log_*.txt
+
+# oxDNA intermediate configurations (can be regenerated)
+sim_out/traj_test.dat
+sim_out/traj_vmmc_test.dat
+sim_out/traj_hist.dat
+sim_out/traj_us_probe.dat
+
+# Keep: converged weights, histograms, configs, topology, PDB-like files
+!sim_out/wfile.txt
+!sim_out/wfile_converged.txt
+!sim_out/hist_prod.dat
+!sim_out/hist_wl*.dat
+!sim_out/op.txt
+!sim_out/meta.txt
+!sim_out/hairpin.top
+!sim_out/init.dat
+!sim_out/last_conf.dat
+!sim_out/last_us_wl*.dat
+!sim_out/input_*.conf
+!sim_out/report.txt
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Test/cache
+.pytest_cache/
+.coverage
+htmlcov/

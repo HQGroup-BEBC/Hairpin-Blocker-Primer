@@ -1,0 +1,48 @@
+REMARK oxDNA2 hairpin conformation: 1/5 stem base pairs
+REMARK sequence: GCGCGTTTTCGCGC
+REMARK approx. temperature state: ~93°C  (1/5 bp)
+REMARK scale: 1 oxDNA σ = 8.518 Å  (centered at origin)
+REMARK beads: P = backbone/sugar site, N1 = base center site
+ATOM      1  P    DG A   1       9.543  15.748  -3.360  1.00  0.00            P
+ATOM      2  N1   DG A   1       6.768  17.549  -2.547  1.00  0.00            N
+ATOM      3  P    DC A   2       5.615  14.792  -5.754  1.00  0.00            P
+ATOM      4  N1   DC A   2       5.028  18.148  -5.688  1.00  0.00            N
+ATOM      5  P    DG A   3       9.616   7.914  -6.490  1.00  0.00            P
+ATOM      6  N1   DG A   3      12.049  10.261  -6.918  1.00  0.00            N
+ATOM      7  P    DC A   4       1.176   2.768  -3.585  1.00  0.00            P
+ATOM      8  N1   DC A   4       0.723   0.390  -1.187  1.00  0.00            N
+ATOM      9  P    DG A   5       0.835  -0.822  -6.012  1.00  0.00            P
+ATOM     10  N1   DG A   5      -1.319  -1.809  -3.563  1.00  0.00            N
+ATOM     11  P    DT A   6      -0.241  -4.736  -6.335  1.00  0.00            P
+ATOM     12  N1   DT A   6      -3.323  -3.293  -6.153  1.00  0.00            N
+ATOM     13  P    DT A   7      -2.326  -8.616  -7.715  1.00  0.00            P
+ATOM     14  N1   DT A   7      -3.485  -5.857  -9.344  1.00  0.00            N
+ATOM     15  P    DT A   8      -5.822  -9.676  -9.303  1.00  0.00            P
+ATOM     16  N1   DT A   8      -4.367  -8.356 -12.087  1.00  0.00            N
+ATOM     17  P    DT A   9      -7.499  -5.718  -3.032  1.00  0.00            P
+ATOM     18  N1   DT A   9      -4.166  -6.133  -2.464  1.00  0.00            N
+ATOM     19  P    DC A  10      -6.509  -4.081   0.608  1.00  0.00            P
+ATOM     20  N1   DC A  10      -3.877  -2.944  -1.233  1.00  0.00            N
+ATOM     21  P    DG A  11      -3.376  -1.242   7.197  1.00  0.00            P
+ATOM     22  N1   DG A  11      -0.071  -1.916   7.683  1.00  0.00            N
+ATOM     23  P    DC A  12      -2.293  -2.754  11.187  1.00  0.00            P
+ATOM     24  N1   DC A  12       0.139  -0.387  10.893  1.00  0.00            N
+ATOM     25  P    DG A  13      -0.054  -3.009  14.791  1.00  0.00            P
+ATOM     26  N1   DG A  13      -1.571  -0.025  14.156  1.00  0.00            N
+ATOM     27  P    DC A  14       1.335  -0.567  17.804  1.00  0.00            P
+ATOM     28  N1   DC A  14      -2.000   0.116  17.681  1.00  0.00            N
+CONECT    1    3
+CONECT    3    5
+CONECT    5    7
+CONECT    7    9
+CONECT    9   11
+CONECT   11   13
+CONECT   13   15
+CONECT   15   17
+CONECT   17   19
+CONECT   19   21
+CONECT   21   23
+CONECT   23   25
+CONECT   25   27
+CONECT    2   28
+END

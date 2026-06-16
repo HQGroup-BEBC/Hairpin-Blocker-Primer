@@ -1,0 +1,9 @@
+seq=GCGCGTTTTCGCGC
+stem_len=5
+loop_len=4
+dg_hairpin=-2.3964
+si=1.500
+ei=1.000
+primer3_tm=77.24
+primer3_dh=-48.7000
+primer3_ds=-138.9873

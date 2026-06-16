@@ -1,0 +1,18 @@
+biopython>=1.87
+primer3-py>=2.3.0
+
+# AI for Science组件(primer_designer.gnn_model)所需——
+# 仅design_hairpin_blocker_ai、train_gnn.py及NNN数据集分析脚本需要
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+torch>=2.0
+pywebview
+
+# oxDNA 三态自由能验证 (oxdna_sim/ 模块) 所需——
+# Python 分析层依赖 numpy/matplotlib（已包含），仅需额外安装 oxDNA 模拟引擎：
+#   git clone https://github.com/lorenzo-rovigatti/oxDNA
+#   cd oxDNA && mkdir build && cd build && cmake .. -DPython=1 && make -j4
+# 安装后确认：oxDNA --version
+# 参考: Sulc et al. (2012) J. Chem. Phys. 137, 135101
+#       Snodin et al. (2015) J. Chem. Phys. 142, 234901 (oxDNA2)
