@@ -565,7 +565,8 @@ class MainWindow(ttk.Frame):
         ax.set_aspect("equal")
         ax.set_axis_off()
 
-        seq = design.hairpin_primer_seq
+        # 使用 dna_seq（纯核苷酸，不含[HEG]占位符）计算布局
+        seq = getattr(design, "dna_seq", design.hairpin_primer_seq.replace("[HEG]", ""))
         n = len(seq)
         s = design.stem_len
         l = design.loop_len
@@ -630,6 +631,17 @@ class MainWindow(ttk.Frame):
             ax.text(xs[i], ys[i], seq[i], ha="center", va="center",
                     fontsize=fsize, color="white", fontweight="bold",
                     fontfamily="monospace", zorder=4)
+
+        # HEG非核苷酸连接子标注（位于loop末和primer body之间的弧上）
+        if n_ss > 0 and l > 0 and n_pb > 0:
+            t_heg = (l + 0.5) / (n_ss + 1)
+            x_heg = -d * _np.cos(_np.pi * t_heg)
+            y_heg = Y_top + b_arc * _np.sin(_np.pi * t_heg)
+            ax.annotate(
+                "HEG", xy=(x_heg, y_heg), fontsize=6.5, color="#E65100",
+                ha="center", va="center", fontweight="bold", zorder=5,
+                bbox=dict(boxstyle="round,pad=0.25", fc="#FFF3E0", ec="#E65100", lw=1.0),
+            )
 
         # 5' / 3' end labels
         ax.text(xs[0] - base_r - 0.25, ys[0], "5'",
@@ -1106,7 +1118,8 @@ class MainWindow(ttk.Frame):
         ax = self.fig_3d.add_subplot(111, projection="3d")
         ax.set_axis_off()
 
-        seq  = design.hairpin_primer_seq
+        # 使用 dna_seq（纯核苷酸，不含[HEG]占位符）计算布局
+        seq  = getattr(design, "dna_seq", design.hairpin_primer_seq.replace("[HEG]", ""))
         n    = len(seq)
         s    = design.stem_len
         lp   = design.loop_len
@@ -1327,14 +1340,15 @@ class MainWindow(ttk.Frame):
             messagebox.showerror("PDB生成失败", str(exc))
             return
 
-        seq = design.hairpin_primer_seq
+        seq = design.hairpin_primer_seq  # 含[HEG]的展示字符串，仅用于标题
+        dna_total = len(getattr(design, "dna_seq", seq.replace("[HEG]", "")))
         self.lbl_status.config(text=f"正在启动3D查看器 — {seq[:16]}…")
         launch_viewer(
             pdb_string=pdb_str,
             title=f"发夹阻断引物 3D — {seq[:14]}… | stem={design.stem_len}bp loop={design.loop_len}nt",
             stem_len=design.stem_len,
             loop_len=design.loop_len,
-            total_len=len(seq),
+            total_len=dna_total,
             use_webview=True,
         )
         self.lbl_status.config(

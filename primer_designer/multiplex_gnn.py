@@ -448,12 +448,12 @@ def run_mpign(
 
     for k, p in enumerate(pairs):
         idx_l = len(all_seqs)
-        all_seqs.append(p.left.hairpin_primer_seq)
+        all_seqs.append(p.left.dna_seq)
         seq_labels.append(f"Pair{k+1}-L")
         all_designs.append(p.left)
 
         idx_r = len(all_seqs)
-        all_seqs.append(p.right.hairpin_primer_seq)
+        all_seqs.append(p.right.dna_seq)
         seq_labels.append(f"Pair{k+1}-R")
         all_designs.append(p.right)
 

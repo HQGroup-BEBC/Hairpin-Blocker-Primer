@@ -1,18 +1,35 @@
-"""Module 2: 发夹阻断域设计 —— 茎长(4-6bp)/环长(3-5nt)/环序列搜索
+"""Module 2: 发夹阻断域设计 —— 茎长(4-6bp)/环长(3-5nt)/环序列搜索（含HEG阻断基团）
 
-对每条引物，在其5'端拼接 `stem_comp + loop_seq`（stem_comp与引物自身3'端
-互补，详见thermo_model模块说明），遍历茎长/环长/环序列组合，选出最能
-区分目标与脱靶结合的发夹阻断设计。
+引物结构（含HEG）：
+    5'-[stem_comp]-[loop]-[HEG]-[primer_body]-3'
+
+其中：
+  stem_comp = revcomp(primer_body[-stem_len:])   拼接在5'端
+  loop      = 3-5 nt环序列（过滤GGG/CCC/回文）
+  HEG       = 六乙二醇非核苷酸连接子（阻断聚合酶read-through）
+  primer_body = 原始引物主体序列（不含发夹域）
+
+HEG的作用：
+  1. 阻断聚合酶从5'端发夹域read-through进入引物主体（消除self-priming）
+  2. 对目标模板结合引入熵罚（+1.8 kcal/mol，见thermo_model.HEG_ENTROPY_PENALTY）
+  3. 对错配脱靶结合无惩罚（脱靶不需跨越HEG）
+
+热力学分量（均来自thermo_model）：
+  dg_hairpin   = calc_hairpin(dna_seq)         dna_seq = stem_comp+loop+primer_body
+  dg_target    = calc_heterodimer(body, revcomp(body)) + HEG_PENALTY
+  dg_offtarget = calc_heterodimer(body, offtarget_window)    （无HEG罚）
+  dg_homodimer = calc_heterodimer(dna_seq, dna_seq)
+
+hairpin_primer_seq 字段为展示字符串：
+    stem_comp + loop + "[HEG]" + primer_body
 
 design_hairpin_blocker_ai 是该搜索的"AI for Science"加速版本：用
-gnn_model中的结构感知GNN代理模型（训练时使用NNN数据集TargetStruct点括号作为
-氢键边，推断时由stem_len/loop_len参数构造点括号，零NUPACK运行时依赖）
-在不设环序列数量上限的扩展候选空间中先筛选，再由primer3精确复算
-筛选出的候选，详见该函数docstring。
+gnn_model中的结构感知GNN代理模型在不设环序列数量上限的扩展候选空间中
+先筛选ΔG_hairpin，再由primer3精确复算，详见该函数docstring。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
 
 import numpy as np
@@ -27,8 +44,8 @@ from .thermo_model import (
     compute_si_ei,
 )
 
-STEM_LEN_RANGE = range(4, 7)  # 4-6 bp（用户建议从4-6 bp开始；茎过长→发夹过稳→on-target扩增效率风险）
-LOOP_LEN_RANGE = range(3, 6)  # 3-5 nt
+STEM_LEN_RANGE = range(4, 7)   # 4-6 bp
+LOOP_LEN_RANGE = range(3, 6)   # 3-5 nt
 MAX_LOOP_CANDIDATES = 10
 AI_TOP_K = 20
 
@@ -40,8 +57,7 @@ def _revcomp(seq: str) -> str:
 
 
 def _is_valid_loop(seq: str) -> bool:
-    """过滤含GGG/CCC（可能形成G-四链体/额外结构）及自身为回文
-    （可能在环内自我配对）的环序列"""
+    """过滤含GGG/CCC（G四链体风险）及回文（环内自配对风险）的环序列"""
     if "GGG" in seq or "CCC" in seq:
         return False
     if seq == _revcomp(seq):
@@ -50,8 +66,7 @@ def _is_valid_loop(seq: str) -> bool:
 
 
 def generate_loop_sequences(length: int, max_candidates: int = MAX_LOOP_CANDIDATES) -> list[str]:
-    """枚举长度为length的环序列，过滤规则见_is_valid_loop，最多返回
-    max_candidates个"""
+    """枚举长度为length的环序列，过滤后最多返回max_candidates个"""
     candidates: list[str] = []
     for combo in product(_BASES, repeat=length):
         seq = "".join(combo)
@@ -64,8 +79,7 @@ def generate_loop_sequences(length: int, max_candidates: int = MAX_LOOP_CANDIDAT
 
 
 def generate_loop_sequences_all(length: int) -> list[str]:
-    """枚举长度为length的全部环序列（不设数量上限），过滤规则与
-    generate_loop_sequences相同。供design_hairpin_blocker_ai的扩展搜索使用"""
+    """枚举长度为length的全部环序列（不设数量上限），供AI搜索使用"""
     return [
         "".join(combo)
         for combo in product(_BASES, repeat=length)
@@ -73,14 +87,12 @@ def generate_loop_sequences_all(length: int) -> list[str]:
     ]
 
 
-_HOMODIMER_WARN = -5.0   # kcal/mol，两份发夹引物互聚体警戒线（primer-dimer风险）
-_HOMODIMER_HIGH = -8.0   # kcal/mol，强二聚体高风险线
-
-_ON_TARGET_RISK_MEDIUM_DG = -5.0  # 发夹ΔG低于此值进入中等on-target风险
-_ON_TARGET_RISK_HIGH_DG = -8.0    # 发夹ΔG低于此值进入高on-target风险（发夹难以被目标模板打开）
-
-_SCORE_PENALTY_HOMODIMER = 2.0   # 强二聚体设计评分惩罚
-_SCORE_PENALTY_ONTARGET_HIGH = 2.0  # 高on-target风险设计评分惩罚
+_HOMODIMER_WARN = -5.0
+_HOMODIMER_HIGH = -8.0
+_ON_TARGET_RISK_MEDIUM_DG = -5.0
+_ON_TARGET_RISK_HIGH_DG = -8.0
+_SCORE_PENALTY_HOMODIMER = 2.0
+_SCORE_PENALTY_ONTARGET_HIGH = 2.0
 
 
 @dataclass
@@ -88,10 +100,15 @@ class HairpinDesign:
     stem_len: int
     loop_len: int
     loop_seq: str
-    hairpin_primer_seq: str
-    dg_target: float
-    dg_hairpin: float
-    dg_offtarget: float
+    # 序列字段
+    primer_body_seq: str       # 原始引物主体序列（不含发夹域）
+    hairpin_domain_seq: str    # stem_comp + loop_seq（发夹阻断域，纯核苷酸）
+    dna_seq: str               # stem_comp + loop + primer_body（全DNA，供primer3计算发夹/同源二聚体）
+    hairpin_primer_seq: str    # 展示字符串：stem_comp+loop+"[HEG]"+primer_body
+    # 热力学字段
+    dg_target: float           # primer_body与目标杂交ΔG（含HEG熵罚）
+    dg_hairpin: float          # 完整DNA序列发夹折叠ΔG（不含HEG罚）
+    dg_offtarget: float        # primer_body与错配模板杂交ΔG（无HEG罚）
     si: float
     ei: float
     verdict_si: str
@@ -100,15 +117,11 @@ class HairpinDesign:
     ascii_hairpin: str
     ascii_target: str
     ascii_offtarget: str
-    # 新增：自延伸/primer-dimer风险字段
-    dg_homodimer: float = 0.0      # 两份发夹引物互聚体ΔG（Cordaro 2021 PCR效率预测特征）
-    on_target_risk: str = "low"    # 'low'/'medium'/'high'——发夹过稳可能阻碍目标模板打开
+    dg_homodimer: float = 0.0
+    on_target_risk: str = "low"
 
 
 def _on_target_risk(dg_hairpin: float) -> str:
-    """分类on-target扩增效率风险：发夹过稳时目标模板难以置换发夹（动力学捕获），
-    导致Ct延后/斜率变差/低拷贝检出失败/标准曲线效率<90%。
-    分级阈值参考Cordaro et al. 2021 (PCR_ML_model) PCR效率预测分析。"""
     if dg_hairpin > _ON_TARGET_RISK_MEDIUM_DG:
         return "low"
     if dg_hairpin > _ON_TARGET_RISK_HIGH_DG:
@@ -120,22 +133,25 @@ def _evaluate_candidate(
     stem_len: int, loop_len: int, loop_seq: str, primer_seq: str, offtarget_window: str | None
 ) -> HairpinDesign:
     stem_comp = _revcomp(primer_seq[-stem_len:])
-    hairpin_primer_seq = stem_comp + loop_seq + primer_seq
+    hairpin_domain = stem_comp + loop_seq                    # 纯发夹阻断域（HEG前的部分）
+    dna_seq = hairpin_domain + primer_seq                    # 全DNA序列（无HEG）供primer3使用
+    hairpin_primer_seq = stem_comp + loop_seq + "[HEG]" + primer_seq  # 展示字符串
 
-    # 5'端无单链悬挂（self-extension防护）：stem_comp从位置0开始，3'末端与5'末端配对
-    # 聚合酶无法沿5'→3'方向在5'端末端之外读取模板，故自延伸被结构本身封堵。
-
-    dg_target, ascii_target = compute_dg_target(hairpin_primer_seq, primer_seq)
-    dg_hairpin, ascii_hairpin = compute_dg_hairpin(hairpin_primer_seq)
-    dg_offtarget, ascii_offtarget = compute_dg_offtarget(hairpin_primer_seq, offtarget_window)
+    # 各分量热力学计算（函数签名已更新至HEG修正版）
+    dg_target, ascii_target = compute_dg_target(primer_seq)              # body only + HEG penalty
+    dg_hairpin, ascii_hairpin = compute_dg_hairpin(dna_seq)              # full DNA, no HEG penalty
+    dg_offtarget, ascii_offtarget = compute_dg_offtarget(primer_seq, offtarget_window)  # body only
     si_ei = compute_si_ei(dg_target, dg_hairpin, dg_offtarget)
-    dg_homo = compute_dg_homodimer(hairpin_primer_seq)
+    dg_homo = compute_dg_homodimer(dna_seq)                              # full DNA
     risk = _on_target_risk(dg_hairpin)
 
     return HairpinDesign(
         stem_len=stem_len,
         loop_len=loop_len,
         loop_seq=loop_seq,
+        primer_body_seq=primer_seq,
+        hairpin_domain_seq=hairpin_domain,
+        dna_seq=dna_seq,
         hairpin_primer_seq=hairpin_primer_seq,
         dg_target=dg_target,
         dg_hairpin=dg_hairpin,
@@ -154,18 +170,11 @@ def _evaluate_candidate(
 
 
 def _select_best(designs: list[HairpinDesign]) -> HairpinDesign:
-    """从候选设计列表中选择最优者。
+    """从候选设计中选最优。
 
-    主打分：满足约束 ΔG_target < ΔG_hairpin - 2.0 时，score = ΔG_offtarget - ΔG_hairpin
-    （脱靶相对发夹结合越弱越好）。
-
-    扣分惩罚（均为减分，不淘汰候选）：
-      - primer-dimer风险：dg_homodimer < -5 kcal/mol → 扣 _SCORE_PENALTY_HOMODIMER
-        （两份引物互聚体 → PCR效率下降，Cordaro 2021）
-      - on-target高风险：dg_hairpin < -8 kcal/mol → 扣 _SCORE_PENALTY_ONTARGET_HIGH
-        （发夹过稳 → 目标模板难以动力学置换 → Ct延后/低拷贝检出失败）
-
-    若没有组合满足约束，回退为SI最高的组合（overall_verdict='reject'）。
+    主打分（满足约束 dg_target < dg_hairpin - 2.0 时）：score = dg_offtarget - dg_hairpin
+    扣分：primer-dimer风险（dg_homodimer < -5）、高on-target风险（dg_hairpin < -8）
+    无满足约束的设计时，回退为SI最高的候选。
     """
     best: HairpinDesign | None = None
     best_score = float("-inf")
@@ -180,10 +189,8 @@ def _select_best(designs: list[HairpinDesign]) -> HairpinDesign:
         constraint_ok = design.dg_target < design.dg_hairpin - TARGET_HAIRPIN_MARGIN_KCAL
         score = design.dg_offtarget - design.dg_hairpin
 
-        # Penalty: primer-dimer risk
         if design.dg_homodimer < _HOMODIMER_WARN:
             score -= _SCORE_PENALTY_HOMODIMER
-        # Penalty: on-target risk (over-stable hairpin resists template opening)
         if design.dg_hairpin < _ON_TARGET_RISK_HIGH_DG:
             score -= _SCORE_PENALTY_ONTARGET_HIGH
 
@@ -192,13 +199,12 @@ def _select_best(designs: list[HairpinDesign]) -> HairpinDesign:
             best = design
 
     result = best if best is not None else fallback
-    assert result is not None  # 至少有一个候选
+    assert result is not None
     return result
 
 
 def design_hairpin_blocker(primer_seq: str, offtarget_window: str | None) -> HairpinDesign:
-    """遍历茎长/环长/环序列组合（环序列截断至MAX_LOOP_CANDIDATES个），
-    返回_select_best选出的最优发夹阻断设计"""
+    """遍历茎长/环长/环序列组合，返回_select_best选出的最优发夹阻断设计"""
     designs: list[HairpinDesign] = []
     for stem_len in STEM_LEN_RANGE:
         if stem_len >= len(primer_seq):
@@ -215,20 +221,18 @@ def design_hairpin_blocker_ai(
     surrogate,
     top_k: int = AI_TOP_K,
 ) -> HairpinDesign:
-    """AI加速搜索（"AI for Science"组件）：用StructureFreeGNN代理模型
-    (gnn_model.GNNSurrogate)在完整的stem(4-8bp)/loop(3-5nt)候选空间——
-    环序列不设MAX_LOOP_CANDIDATES数量上限，候选总数约扩大30倍——中按
-    预测ΔG_hairpin(60°C)批量筛选出top_k个候选，再由primer3精确复算这些
-    候选的ΔG_target/ΔG_hairpin/ΔG_offtarget/SI/EI，最终用_select_best
-    规则选出最优设计。GNN仅作预筛选，primer3给出最终热力学数值。
+    """AI加速搜索：GNN代理模型预筛选dg_hairpin，primer3精确复算Top-K候选。
 
-    surrogate为None时回退到design_hairpin_blocker（精确穷举）。
+    GNN输入为全DNA序列（stem_comp+loop+primer_body），dot_bracket由设计参数构造。
+    surrogate为None时回退到精确穷举。
     """
     if surrogate is None:
         return design_hairpin_blocker(primer_seq, offtarget_window)
 
     from .thermo_model import ANNEAL_TEMP_C
+    from .gnn_model import design_dotbracket
 
+    # 候选列表: (stem_len, loop_len, loop_seq, dna_seq)
     candidates: list[tuple[int, int, str, str]] = []
     for stem_len in STEM_LEN_RANGE:
         if stem_len >= len(primer_seq):
@@ -236,13 +240,13 @@ def design_hairpin_blocker_ai(
         stem_comp = _revcomp(primer_seq[-stem_len:])
         for loop_len in LOOP_LEN_RANGE:
             for loop_seq in generate_loop_sequences_all(loop_len):
-                candidates.append((stem_len, loop_len, loop_seq, stem_comp + loop_seq + primer_seq))
+                dna_seq = stem_comp + loop_seq + primer_seq
+                candidates.append((stem_len, loop_len, loop_seq, dna_seq))
 
     if not candidates:
         return design_hairpin_blocker(primer_seq, offtarget_window)
 
-    from .gnn_model import design_dotbracket
-
+    # GNN批量预测 dg_hairpin（使用全DNA序列和对应dot_bracket）
     pred_dg = np.array([
         surrogate.predict_dg(
             c[3],
@@ -252,8 +256,8 @@ def design_hairpin_blocker_ai(
         for c in candidates
     ])
 
-    ref_hairpin_seq = candidates[0][3]
-    dg_target_est, _ = compute_dg_target(ref_hairpin_seq, primer_seq)
+    # 阈值：dg_target（body only + HEG penalty）+ 2.0 kcal/mol 裕量
+    dg_target_est, _ = compute_dg_target(primer_seq)
     threshold = dg_target_est + TARGET_HAIRPIN_MARGIN_KCAL
 
     order = np.argsort(pred_dg)
